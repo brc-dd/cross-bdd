@@ -1,3 +1,5 @@
 // @ts-check
 
-export { describe, it } from 'bun:test'
+import { describe, it } from 'bun:test'
+
+export { describe, it }
