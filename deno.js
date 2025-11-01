@@ -8,6 +8,7 @@
 
 /** @type {Array<SuiteCtx>} */
 const ctxStack = []
+let specDepth = 0
 
 /**
  * @returns {SuiteCtx}
@@ -46,24 +47,34 @@ async function withCtx(ctx, run) {
 }
 
 /**
+ * @param {'describe' | 'it'} caller
+ */
+function assertNotInSpec(caller) {
+  if (specDepth > 0) {
+    throw new Error(
+      `Cannot call ${caller}() inside an it() body. ` +
+        `Move it to a describe() block or schedule it as its own test.`
+    )
+  }
+}
+
+/**
  * @param {string} name
  * @param {() => void | Promise<void>} body
  * @returns {void}
  */
 export function describe(name, body) {
+  assertNotInSpec('describe')
   const inSuite = ctxStack.length > 0
   if (!inSuite) {
     // prettier-ignore
     /** @type {{ Deno: typeof import('@deno/shim-deno-test') }}*/ (/** @type {unknown}*/ (globalThis))
-    .Deno.test(
-      name,
-      async (t) => {
-        const root = { t, queue: [] }
-        await withCtx(root, async () => {
-          await body()
-        })
-      }
-    )
+    .Deno.test(name, async (t) => {
+      const root = { t, queue: [] }
+      await withCtx(root, async () => {
+        await body()
+      })
+    })
   } else {
     const parent = currentCtx()
     parent.queue.push(async () => {
@@ -83,10 +94,16 @@ export function describe(name, body) {
  * @returns {void}
  */
 export function it(name, body) {
+  assertNotInSpec('it')
   const ctx = currentCtx()
   ctx.queue.push(async () => {
     await ctx.t.step(name, async () => {
-      await body()
+      specDepth++
+      try {
+        await body()
+      } finally {
+        specDepth--
+      }
     })
   })
 }
