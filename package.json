@@ -1,6 +1,6 @@
 {
   "name": "cross-bdd",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Cross-runtime `describe`/`it` for Bun, Deno, and Node.js test runners.",
   "keywords": [
     "cross",
