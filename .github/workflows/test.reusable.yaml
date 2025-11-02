@@ -23,78 +23,108 @@ jobs:
           set -euo pipefail
           shopt -s globstar nullglob extglob
 
-          TEST_FILES=(**/*.test.ts)
-
-          DENO_TEST_COMMAND=(deno test -A "${TEST_FILES[@]}")
-          NODE_TEST_COMMAND=(pnpx tsx --test "${TEST_FILES[@]}")
-          BUN_TEST_COMMAND=(bun test "${TEST_FILES[@]}")
+          pm=""
+          [[ -f deno.lock ]] && pm="deno"
+          [[ -z "${pm}" && -f pnpm-lock.yaml ]] && pm="pnpm"
+          [[ -z "${pm}" && -f bun.lock ]] && pm="bun"
+          [[ -z "${pm}" ]] && { echo "Unsupported package manager. Exiting." >&2; exit 1; }
 
           TASKS="$(NO_COLOR=1 deno task 2>/dev/null || true)"
 
-          has_task() {
-            grep -qE "^- $1(\b|[[:space:]])" <<<"$TASKS"
+          declare -a NPM_DEPS=()
+          declare -a JSR_DEPS=()
+
+          if [[ -f deno.json ]]; then
+            while IFS= read -r dep; do
+              [[ -n "$dep" ]] && NPM_DEPS+=("$dep")
+            done < <(jq -r '.imports // {} | to_entries[]? | select(.value|startswith("npm:")) | .value[4:]' deno.json 2>/dev/null || true)
+            while IFS= read -r dep; do
+              [[ -n "$dep" ]] && JSR_DEPS+=("$dep")
+            done < <(jq -r '.imports // {} | to_entries[]? | select(.value|startswith("jsr:")) | .value' deno.json 2>/dev/null || true)
+          fi
+
+          install_deps() {
+            local rt=$1
+            [[ -d node_modules ]] && return 0
+
+            case "${pm}:${rt}" in
+            deno:deno)
+              return 0
+              ;;
+            deno:*)
+              [[ -f package.json ]] || echo '{ "type": "module" }' >package.json
+              ((${#NPM_DEPS[@]})) && "$rt" add "${NPM_DEPS[@]}"
+              if ((${#JSR_DEPS[@]})); then
+                if [[ "$rt" == "bun" ]]; then
+                  bun x jsr add "${JSR_DEPS[@]#jsr:}"
+                else
+                  pnpm add "${JSR_DEPS[@]}"
+                fi
+              fi
+              ;;
+            *:*)
+              "$rt" install
+              ;;
+            esac
           }
 
-          has_task test:deno && DENO_TEST_COMMAND=(deno task test:deno)
-          has_task test:node && NODE_TEST_COMMAND=(deno task test:node)
-          has_task test:bun && BUN_TEST_COMMAND=(deno task test:bun)
+          run_task() {
+            local rt=$1 task=$2 fallback="${3:-}"
 
-          if [ -f "deno.json" ]; then
-            deno install
-            has_task build && deno task build
-            has_task check:only && deno task check:only
-            if [ ! -f "package.json" ]; then
-              echo '{ "type": "module" }' >package.json
+            install_deps "$rt"
+
+            if grep -qE "^- ${task}(\b|[[:space:]])" <<<"$TASKS"; then
+              case "${rt}" in
+              deno) deno task "$task" ;;
+              pnpm) pnpm run "$task" ;;
+              bun) bun run "$task" ;;
+              esac
+            elif [[ -n "$fallback" ]]; then
+              eval "$fallback"
             fi
-          elif [ -f "package.json" ]; then
-            pnpm install
-            has_task build && pnpm build
-            has_task check:only && pnpm check:only
-            if [ ! -f "deno.json" ]; then
-              echo '{ "imports": {} }' >deno.json
-            fi
-          else
-            echo 'Could not find deno.json or package.json. Please ensure at least one exists.'
-            exit 1
+          }
+
+          run_task "$pm" build
+          run_task "$pm" check:only
+
+          if [[ -d "./dist" ]]; then
+            (cd dist && pnpm pack --out=pkg.tgz >/dev/null)
+            NPM_DEPS=("./dist/pkg.tgz" "${NPM_DEPS[@]}")
           fi
 
-          NPM_DEPS=$(jq -r '.imports | to_entries[] | select(.value | startswith("npm:")) | .value[4:]' deno.json)
-          JSR_DEPS=$(jq -r '.imports | to_entries[] | select(.value | startswith("jsr:")) | .value' deno.json)
+          TEST_FILES=(**/*.test.ts)
 
-          if [ -d "./dist" ]; then
-            (cd dist && pnpm pack --out=pkg.tgz)
-            NPM_DEPS="./dist/pkg.tgz $NPM_DEPS"
-          fi
+          run_tests() {
+            local rt=$1 ver=$2
 
-          for version in ${{ inputs.deno_versions }}; do
-            echo "Testing on Deno version $version"
-            deno upgrade ${version}
-            deno -v
-            deno install
-            "${DENO_TEST_COMMAND[@]}"
-          done
+            git reset --hard HEAD
+            git clean -fd
+            rm -rf node_modules
 
-          for version in ${{ inputs.node_versions }}; do
-            echo "Testing on Node.js version $version"
-            pnpm env use --global ${version}
-            node -v
-            if [ -n "$NPM_DEPS" ] || [ -n "$JSR_DEPS" ]; then
-              pnpm add $NPM_DEPS $JSR_DEPS
-            fi
-            pnpm install
-            "${NODE_TEST_COMMAND[@]}"
-          done
+            case "$rt" in
+            deno)
+              deno upgrade "$ver"
+              run_task deno test:deno "deno test -A ${TEST_FILES[*]}"
+              ;;
+            node)
+              pnpm env use --global "$ver"
+              run_task pnpm test:node "pnpx tsx --test ${TEST_FILES[*]}"
+              ;;
+            bun)
+              pnpm add --dangerously-allow-all-builds -g "bun@$ver"
+              run_task bun test:bun "bun test ${TEST_FILES[*]}"
+              ;;
+            esac
+          }
 
-          for version in ${{ inputs.bun_versions }}; do
-            echo "Testing on Bun version $version"
-            pnpm add --dangerously-allow-all-builds -g bun@${version}
-            bun -v
-            if [ -n "$NPM_DEPS" ]; then
-              bun add $NPM_DEPS
-            fi
-            if [ -n "$JSR_DEPS" ]; then
-              bun x jsr add $(echo $JSR_DEPS | sed 's/^jsr://')
-            fi
-            bun install
-            "${BUN_TEST_COMMAND[@]}"
-          done
+          run_versions() {
+            local rt=$1 versions=$2
+            [[ -z "$versions" ]] && return 0
+            for v in $versions; do
+              run_tests "$rt" "$v"
+            done
+          }
+
+          run_versions deno "${{ inputs.deno_versions }}"
+          run_versions node "${{ inputs.node_versions }}"
+          run_versions bun "${{ inputs.bun_versions }}"
