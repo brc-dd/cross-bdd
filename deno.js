@@ -2,7 +2,7 @@
 
 /**
  * @typedef {Object} SuiteCtx
- * @property {import('@deno/shim-deno-test').TestContext} t
+ * @property {Deno.TestContext} t
  * @property {Array<() => Promise<void>>} queue
  */
 
@@ -67,9 +67,7 @@ export function describe(name, body) {
   assertNotInSpec('describe')
   const inSuite = ctxStack.length > 0
   if (!inSuite) {
-    // prettier-ignore
-    /** @type {{ Deno: typeof import('@deno/shim-deno-test') }}*/ (/** @type {unknown}*/ (globalThis))
-    .Deno.test(name, async (t) => {
+    Deno.test(name, async (t) => {
       const root = { t, queue: [] }
       await withCtx(root, async () => {
         await body()

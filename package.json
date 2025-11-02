@@ -1,22 +1,57 @@
 {
   "name": "cross-bdd",
   "version": "0.1.2",
-  "license": "MIT",
-  "type": "module",
-  "files": [
-    "*.js",
-    "index.d.ts"
+  "description": "Cross-runtime `describe`/`it` for Bun, Deno, and Node.js test runners.",
+  "keywords": [
+    "cross",
+    "runtime",
+    "agnostic",
+    "bdd",
+    "testing",
+    "describe",
+    "it",
+    "bun",
+    "deno",
+    "node",
+    "test",
+    "runner"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brc-dd/cross-bdd.git"
+  },
+  "funding": "https://github.com/sponsors/brc-dd",
+  "license": "MIT",
+  "author": "Divyansh Singh <brc-dd@hotmail.com> (https://github.com/brc-dd)",
+  "type": "module",
   "exports": {
     "bun": "./bun.js",
     "deno": "./deno.js",
     "node": "./node.js",
     "types": "./index.d.ts"
   },
+  "files": [
+    "*.js",
+    "index.d.ts",
+    "*.md"
+  ],
+  "scripts": {
+    "test:bun": "bun test",
+    "test:deno": "deno test --no-check",
+    "test:node": "node --test",
+    "test": "npm run test:bun && npm run test:deno && npm run test:node",
+    "format": "prettier --write .",
+    "format:fail": "prettier --check .",
+    "type": "tsc -b",
+    "check:only": "pnpm run type",
+    "check": "pnpm run check:only && pnpm t",
+    "release": "deno run -A https://raw.githubusercontent.com/globalbrain/hado/refs/heads/main/scripts/release.ts"
+  },
   "devDependencies": {
-    "@deno/shim-deno-test": "^0.5.0",
+    "@types/bun": "^1.3.1",
+    "@types/deno": "^2.5.0",
     "@types/node": "^24.9.2",
-    "bun-types": "^1.3.1",
+    "prettier": "^3.6.2",
     "typescript": "^5.9.3"
   }
 }

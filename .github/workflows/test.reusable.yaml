@@ -25,12 +25,22 @@ jobs:
 
           TEST_FILES=(**/*.test.ts)
 
-          if NO_COLOR=1 deno task 2>/dev/null | grep '^- build' >/dev/null; then
-            deno task build
-          fi
-          if NO_COLOR=1 deno task 2>/dev/null | grep '^- check:only' >/dev/null; then
-            deno task check:only
-          fi
+          DENO_TEST_COMMAND=(deno test -A "${TEST_FILES[@]}")
+          NODE_TEST_COMMAND=(pnpx tsx --test "${TEST_FILES[@]}")
+          BUN_TEST_COMMAND=(bun test "${TEST_FILES[@]}")
+
+          TASKS="$(NO_COLOR=1 deno task 2>/dev/null || true)"
+
+          has_task() {
+            grep -qE "^- $1(\b|[[:space:]])" <<<"$TASKS"
+          }
+
+          has_task build && deno task build
+          has_task check:only && deno task check:only
+
+          has_task test:deno && DENO_TEST_COMMAND=(deno task test:deno)
+          has_task test:node && NODE_TEST_COMMAND=(deno task test:node)
+          has_task test:bun && BUN_TEST_COMMAND=(deno task test:bun)
 
           if [ ! -f "deno.json" ]; then
             echo '{ "imports": {} }' >deno.json
@@ -52,7 +62,7 @@ jobs:
             deno upgrade ${version}
             deno -v
             deno install
-            deno test -A "${TEST_FILES[@]}"
+            "${DENO_TEST_COMMAND[@]}"
           done
 
           for version in ${{ inputs.node_versions }}; do
@@ -63,7 +73,7 @@ jobs:
               pnpm add $NPM_DEPS $JSR_DEPS
             fi
             pnpm install
-            pnpx tsx --test "${TEST_FILES[@]}"
+            "${NODE_TEST_COMMAND[@]}"
           done
 
           for version in ${{ inputs.bun_versions }}; do
@@ -77,5 +87,5 @@ jobs:
               bun x jsr add $(echo $JSR_DEPS | sed 's/^jsr://')
             fi
             bun install
-            bun test "${TEST_FILES[@]}"
+            "${BUN_TEST_COMMAND[@]}"
           done
