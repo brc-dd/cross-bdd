@@ -35,18 +35,27 @@ jobs:
             grep -qE "^- $1(\b|[[:space:]])" <<<"$TASKS"
           }
 
-          has_task build && deno task build
-          has_task check:only && deno task check:only
-
           has_task test:deno && DENO_TEST_COMMAND=(deno task test:deno)
           has_task test:node && NODE_TEST_COMMAND=(deno task test:node)
           has_task test:bun && BUN_TEST_COMMAND=(deno task test:bun)
 
-          if [ ! -f "deno.json" ]; then
-            echo '{ "imports": {} }' >deno.json
-          fi
-          if [ ! -f "package.json" ]; then
-            echo '{ "type": "module" }' >package.json
+          if [ -f "deno.json" ]; then
+            deno install
+            has_task build && deno task build
+            has_task check:only && deno task check:only
+            if [ ! -f "package.json" ]; then
+              echo '{ "type": "module" }' >package.json
+            fi
+          elif [ -f "package.json" ]; then
+            pnpm install
+            has_task build && pnpm build
+            has_task check:only && pnpm check:only
+            if [ ! -f "deno.json" ]; then
+              echo '{ "imports": {} }' >deno.json
+            fi
+          else
+            echo 'Could not find deno.json or package.json. Please ensure at least one exists.'
+            exit 1
           fi
 
           NPM_DEPS=$(jq -r '.imports | to_entries[] | select(.value | startswith("npm:")) | .value[4:]' deno.json)

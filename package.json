@@ -39,12 +39,12 @@
     "test:bun": "bun test",
     "test:deno": "deno test --no-check",
     "test:node": "node --test",
-    "test": "npm run test:bun && npm run test:deno && npm run test:node",
+    "test": "pnpm test:bun && pnpm test:deno && pnpm test:node",
     "format": "prettier --write .",
     "format:fail": "prettier --check .",
     "type": "tsc -b",
-    "check:only": "pnpm run type",
-    "check": "pnpm run check:only && pnpm t",
+    "check:only": "pnpm type",
+    "check": "pnpm check:only && pnpm t",
     "release": "deno run -A https://raw.githubusercontent.com/globalbrain/hado/refs/heads/main/scripts/release.ts"
   },
   "devDependencies": {
