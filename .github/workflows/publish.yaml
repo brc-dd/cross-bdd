@@ -15,7 +15,7 @@ jobs:
       - uses: lewagon/wait-on-check-action@v1.4.1
         with:
           ref: ${{ github.ref }}
-          check-name: 'test'
+          check-regexp: 'test / .*'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v6
