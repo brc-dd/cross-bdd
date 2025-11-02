@@ -45,7 +45,7 @@
     "type": "tsc -b",
     "check:only": "pnpm type",
     "check": "pnpm check:only && pnpm t",
-    "release": "deno run -A https://raw.githubusercontent.com/globalbrain/hado/refs/heads/main/scripts/release.ts"
+    "release": "deno run -A --reload https://raw.githubusercontent.com/globalbrain/hado/refs/heads/main/scripts/release.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.3.1",
