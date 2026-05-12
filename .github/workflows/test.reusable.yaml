@@ -14,22 +14,34 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: denoland/setup-deno@v2
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
         with:
           version: latest
       - run: |
           set -euo pipefail
           shopt -s globstar nullglob extglob
 
-          pm=""
-          [[ -f deno.lock ]] && pm="deno"
-          [[ -z "${pm}" && -f pnpm-lock.yaml ]] && pm="pnpm"
-          [[ -z "${pm}" && -f bun.lock ]] && pm="bun"
-          [[ -z "${pm}" ]] && { echo "Unsupported package manager. Exiting." >&2; exit 1; }
+          DENO_VERSIONS="${{ inputs.deno_versions }}"
+          NODE_VERSIONS="${{ inputs.node_versions }}"
+          BUN_VERSIONS="${{ inputs.bun_versions }}"
 
-          TASKS="$(NO_COLOR=1 deno task 2>/dev/null || true)"
+          detect_pm() {
+            if [[ -f deno.lock ]]; then echo deno; return; fi
+            if [[ -f pnpm-lock.yaml ]]; then echo pnpm; return; fi
+            if [[ -f bun.lock ]]; then echo bun; return; fi
+            echo "No supported lockfile found (deno.lock, pnpm-lock.yaml, bun.lock)." >&2
+            exit 1
+          }
+          PM=$(detect_pm)
+
+          pm_runtime() {
+            case "$1" in
+              deno) echo deno ;;
+              pnpm) echo node ;;
+              bun)  echo bun ;;
+            esac
+          }
 
           declare -a NPM_DEPS=()
           declare -a JSR_DEPS=()
@@ -43,17 +55,35 @@ jobs:
             done < <(jq -r '.imports // {} | to_entries[]? | select(.value|startswith("jsr:")) | .value' deno.json 2>/dev/null || true)
           fi
 
+          current_rt=""
+
+          setup_runtime() {
+            local rt=$1 ver=$2
+            local key="$rt:$ver"
+            [[ "$current_rt" == "$key" ]] && return 0
+
+            if [[ -n "$current_rt" ]]; then
+              git reset --hard HEAD
+              git clean -fdx -e dist
+            fi
+
+            pnpm runtime set "$rt" "$ver" -g
+            current_rt="$key"
+          }
+
           install_deps() {
             local rt=$1
             [[ -d node_modules ]] && return 0
 
-            case "${pm}:${rt}" in
+            case "${PM}:${rt}" in
             deno:deno)
               return 0
               ;;
             deno:*)
               [[ -f package.json ]] || echo '{ "type": "module" }' >package.json
-              ((${#NPM_DEPS[@]})) && "$rt" add "${NPM_DEPS[@]}"
+              if ((${#NPM_DEPS[@]})); then
+                "$rt" add "${NPM_DEPS[@]}"
+              fi
               if ((${#JSR_DEPS[@]})); then
                 if [[ "$rt" == "bun" ]]; then
                   bun x jsr add "${JSR_DEPS[@]#jsr:}"
@@ -68,50 +98,68 @@ jobs:
             esac
           }
 
+          has_task() {
+            local task=$1
+            ([[ -f deno.json ]] && jq -e --arg t "$task" '.tasks[$t]' deno.json >/dev/null 2>&1) ||
+              ([[ -f package.json ]] && jq -e --arg t "$task" '.scripts[$t]' package.json >/dev/null 2>&1)
+          }
+
           run_task() {
             local rt=$1 task=$2 fallback="${3:-}"
 
             install_deps "$rt"
 
-            if grep -qE "^- ${task}(\b|[[:space:]])" <<<"$TASKS"; then
-              case "${rt}" in
+            if has_task "$task"; then
+              case "$rt" in
               deno) deno task "$task" ;;
               pnpm) pnpm run "$task" ;;
-              bun) bun run "$task" ;;
+              bun)  bun run "$task" ;;
               esac
             elif [[ -n "$fallback" ]]; then
               eval "$fallback"
             fi
           }
 
-          run_task "$pm" build
-          run_task "$pm" check:only
+          pick_build_version() {
+            local versions=""
+            case "$PM" in
+              deno) versions="$DENO_VERSIONS" ;;
+              pnpm) versions="$NODE_VERSIONS" ;;
+              bun)  versions="$BUN_VERSIONS" ;;
+            esac
+            if [[ -z "$versions" ]]; then
+              echo "Detected package manager '$PM' but its version list input is empty. Set the corresponding *_versions input." >&2
+              exit 1
+            fi
+            echo "${versions##* }"
+          }
 
-          if [[ -d "./dist" ]]; then
+          setup_runtime "$(pm_runtime "$PM")" "$(pick_build_version)"
+
+          run_task "$PM" build
+          run_task "$PM" check:only
+
+          if [[ -d ./dist && -f ./dist/package.json ]]; then
             (cd dist && pnpm pack --out=pkg.tgz >/dev/null)
             NPM_DEPS=("./dist/pkg.tgz" "${NPM_DEPS[@]}")
           fi
 
-          TEST_FILES=(**/*.test.ts)
+          declare -a TEST_FILES=()
+          mapfile -d '' -t TEST_FILES < <(git ls-files -z '*.test.ts')
 
           run_tests() {
             local rt=$1 ver=$2
 
-            git reset --hard HEAD
-            git clean -fd
-            rm -rf node_modules
+            setup_runtime "$rt" "$ver"
 
             case "$rt" in
             deno)
-              deno upgrade "$ver"
               run_task deno test:deno "deno test -A ${TEST_FILES[*]}"
               ;;
             node)
-              pnpm env use --global "$ver"
               run_task pnpm test:node "pnpx tsx --test ${TEST_FILES[*]}"
               ;;
             bun)
-              pnpm add --dangerously-allow-all-builds -g "bun@$ver"
               run_task bun test:bun "bun test ${TEST_FILES[*]}"
               ;;
             esac
@@ -125,6 +173,6 @@ jobs:
             done
           }
 
-          run_versions deno "${{ inputs.deno_versions }}"
-          run_versions node "${{ inputs.node_versions }}"
-          run_versions bun "${{ inputs.bun_versions }}"
+          run_versions deno "$DENO_VERSIONS"
+          run_versions node "$NODE_VERSIONS"
+          run_versions bun  "$BUN_VERSIONS"

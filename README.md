@@ -76,11 +76,11 @@ node --test
 
   jobs:
     test:
-      uses: brc-dd/cross-bdd/.github/workflows/test.reusable.yaml@main
+      uses: brc-dd/cross-bdd/.github/workflows/test.reusable.yaml@main # pin it to specific commit for better stability
       with:
-        deno_versions: stable # remove this line to skip Deno testing
+        deno_versions: latest # remove this line to skip Deno testing
         bun_versions: latest # remove this line to skip Bun testing
-        node_versions: 20 22 24 # remove this line to skip Node.js testing
+        node_versions: 22 24 26 # remove this line to skip Node.js testing
   ```
 
 ## Credits
