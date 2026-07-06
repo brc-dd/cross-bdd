@@ -12,12 +12,12 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: lewagon/wait-on-check-action@v1.7.0
+      - uses: lewagon/wait-on-check-action@v1.8.1
         with:
           ref: ${{ github.ref }}
           check-regexp: 'test / .*'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: 26
