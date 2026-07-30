@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   test:
-    uses: brc-dd/cross-bdd/.github/workflows/test.reusable.yaml@main
+    uses: $/.github/workflows/test.reusable.yaml
     with:
       deno_versions: latest
       bun_versions: latest
